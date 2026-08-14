@@ -1,0 +1,22 @@
+[package]
+name = "funpay_api"
+version = "0.1.0"
+edition = "2024"
+authors = ["hayward <https://t.me/veryhighest>"]
+description = "FunPayAPI is a Rust library for automating processes on the FunPay digital marketplace."
+repository = "https://github.com/Getepq/FunPayAPI"
+readme = "README.md"
+license = "MIT"
+
+[dependencies]
+scraper = "0.27.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["full"] }
+tracing = "0.1"
+wreq = { version = "5.3.0", features = ["cookies", "gzip", "multipart", "socks", "json"] }
+wreq-util = "2.2.6"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
