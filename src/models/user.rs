@@ -17,7 +17,6 @@ pub struct CurrentUser {
     pub balance: Balances
 }
 
-
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Status {
     Online,
