@@ -1,20 +1,28 @@
 use serde::{Deserialize, Serialize};
+use crate::models::Balances;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: u32,
     pub username: String,
-    pub avatar: String,
-    pub active: bool,
-    pub balance: Option<Balance>,
-    pub reviews: u32,
-    pub created_at: String,
-    pub csrf_token: Option<String>,
+    pub avatar_url: String,
+    pub status: Status,
+    pub reviews_count: Option<u32>,
+    pub registered_at: String,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Balance {
-    pub rub: String,
-    pub usd: String,
-    pub eur: String,
+pub struct CurrentUser {
+    pub user: User,
+    pub balance: Balances
+}
+
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Status {
+    Online,
+    Offline {
+        last_seen: String,
+    },
+    Blocked,
 }
