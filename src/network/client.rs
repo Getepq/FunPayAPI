@@ -1,29 +1,35 @@
-use crate::network::{ConfigError, Error, HttpError, NetworkError, Result};
+//! Async HTTP-транспорт для FunPay.
+//!
+//! Этот модуль отвечает только за I/O: куки, прокси, таймауты, HTTP-статусы
+//! и чтение response body. HTML-парсинг живёт выше и запускается через
+//! `tokio::task::spawn_blocking`.
+
 use std::{
     sync::{Arc, LazyLock},
     time::Duration,
 };
+
+use crate::network::{ConfigError, Error, HttpError, NetworkError, Result};
 use wreq::cookie::Jar;
 use wreq::{Client, Method, Proxy, Response, Url, header::HeaderMap};
 use wreq_util::{Emulation, EmulationOS, EmulationOption};
 
-static BASE_URL: LazyLock<Url> = LazyLock::new(move || {
-    Url::parse("https://funpay.com/").expect("BASE_URL всегда имеет значение.")
-});
+static BASE_URL: LazyLock<Url> =
+    LazyLock::new(|| Url::parse("https://funpay.com/").expect("BASE_URL всегда имеет значение."));
 
+/// Внутренний HTTP-клиент с "банкой" куков и транспорт-настройками.
 pub struct HttpClient {
     inner: Client,
 }
 
 impl HttpClient {
-    /// Функция создает экземпляр HTTP-клиента.
-    /// 
-    /// При создании, ваш golden_key помещается в "банку", которая к каждым запросам прикрепляет ваш golden_key.
-    /// Помимо этого, она собирает те куки, которые отправил FunPay, это: PHPsessid и golden_seal.
-    /// 
-    /// HTTP-клиент, поддерживает работу через прокси таких типов: socks и http/https. 
-    /// 
-    /// Возвращает ошибки, в случаях: не передан golden_key (MissingGoldenKey), прокси не валиден (InvalidProxy), при сборке клиента произошла ошибка (ClientInit)
+    /// Создаёт транспорт-клиент с "банкой" куков и опциональным прокси.
+    ///
+    /// `golden_key` кладётся только во внутреннию "банку" кук. В публичные
+    /// поля, ошибки и debug-output секрет не прокидывается.
+    ///
+    /// Поддерживаются HTTP/HTTPS- и SOCKS-прокси. Ошибки конфигурации
+    /// возвращаются typed-ами, без паники на пользовательском вводе.
     pub fn new(golden_key: &str, proxy: Option<&str>) -> Result<Self> {
         if golden_key.is_empty() {
             return Err(Error::Config(ConfigError::MissingGoldenKey));
@@ -33,13 +39,13 @@ impl HttpClient {
         let cookies = format!("golden_key={}; Domain=funpay.com", golden_key);
         jar.add_cookie_str(&cookies, &BASE_URL);
 
-        let emul_opt = EmulationOption::builder()
+        let emulation = EmulationOption::builder()
             .emulation_os(EmulationOS::Windows)
             .emulation(Emulation::Chrome137)
             .build();
 
-        let mut buider = Client::builder()
-            .emulation(emul_opt)
+        let mut builder = Client::builder()
+            .emulation(emulation)
             .cookie_provider(Arc::new(jar))
             .connect_timeout(Duration::from_secs(5))
             .read_timeout(Duration::from_secs(10))
@@ -47,22 +53,19 @@ impl HttpClient {
 
         if let Some(proxy) = proxy {
             let proxy = Proxy::all(proxy).map_err(ConfigError::InvalidProxy)?;
-
-            buider = buider.proxy(proxy)
+            builder = builder.proxy(proxy);
         }
 
-        let inner = buider.build().map_err(ConfigError::ClientInit)?;
+        let inner = builder.build().map_err(ConfigError::ClientInit)?;
 
         Ok(Self { inner })
     }
 
-    /// Вспомогательная не публичная функция, которая собирает эндпоинт и обрабатывает ошибки.
+    /// Собирает эндпоинт, отправляет запрос и мапит транспортные-ошибки.
     ///
-    /// Поддерживает отправку POST-запросов с payload-ом.
-    ///
-    /// К запросам GET, POST также можно прикрепить кастомные загаловки, передав в параметры HeaderMap.
-    /// 
-    /// Возвращает ошибки в случаях: эндпоинт невалиден (InvalidEndpoint), сетевые ошибки (NetworkError), HTTP-статус не успешен (HttpError).
+    /// Внутренний request-builder поддерживает GET/POST и опциональные загаловки.
+    /// Неуспешные HTTP-статусы превращаются в типизированные `HttpError`, чтобы
+    /// вызывающий код мог делать нормальный match, а не парсить строки.
     async fn request<T: serde::Serialize + ?Sized>(
         &self,
         method: Method,
@@ -72,37 +75,37 @@ impl HttpClient {
     ) -> Result<Response> {
         let endpoint = BASE_URL
             .join(path)
-            .map_err(|e| ConfigError::InvalidEndpoint(e.to_string()))?;
+            .map_err(|error| ConfigError::InvalidEndpoint(error.to_string()))?;
 
-        let mut req_builder = self.inner.request(method, endpoint);
+        let mut request = self.inner.request(method, endpoint);
 
         if let Some(payload) = payload {
-            req_builder = req_builder.form(&payload);
+            request = request.form(payload);
         }
 
         if let Some(headers) = headers {
-            req_builder = req_builder.headers(headers)
+            request = request.headers(headers);
         }
 
-        let response = req_builder.send().await.map_err(|e| {
-            if e.is_timeout() {
-                NetworkError::Timeout(e)
-            } else if e.is_connect() {
-                NetworkError::ConnectionFailed(e)
-            } else if e.is_redirect() {
-                NetworkError::TooManyRedirects(e)
-            } else if e.is_builder() {
-                NetworkError::RequestBuild(e)
-            } else if e.is_connection_reset() {
-                NetworkError::ConnectionReset(e)
+        let response = request.send().await.map_err(|error| {
+            if error.is_timeout() {
+                NetworkError::Timeout(error)
+            } else if error.is_connect() {
+                NetworkError::ConnectionFailed(error)
+            } else if error.is_redirect() {
+                NetworkError::TooManyRedirects(error)
+            } else if error.is_builder() {
+                NetworkError::RequestBuild(error)
+            } else if error.is_connection_reset() {
+                NetworkError::ConnectionReset(error)
             } else {
-                NetworkError::Unknown(e)
+                NetworkError::Unknown(error)
             }
         })?;
 
         let status = response.status();
         if !status.is_success() {
-            let http_err = match status.as_u16() {
+            let http_error = match status.as_u16() {
                 400 => HttpError::BadRequest,
                 401 => HttpError::Unauthorized,
                 403 => HttpError::Forbidden,
@@ -114,34 +117,35 @@ impl HttpClient {
                 504 => HttpError::GatewayTimeout,
                 code => HttpError::Other(code),
             };
-            return Err(Error::Http(http_err));
+
+            return Err(Error::Http(http_error));
         }
 
         Ok(response)
     }
 
-    /// Отправляет GET-запрос по указанному пути.
-    ///
-    /// Возвращает ошибки в случаях: эндпоинт невалиден (InvalidEndpoint), сетевые ошибки (NetworkError), HTTP-статус не успешен (HttpError).
+    /// Асинхронно выполняет GET-запрос по относительному FunPay пути.
     pub(crate) async fn get(&self, path: &str, headers: Option<HeaderMap>) -> Result<Response> {
-        let response = self
-            .request(Method::GET, path, None::<&()>, headers)
-            .await?;
-        Ok(response)
+        self.request(Method::GET, path, None::<&()>, headers).await
     }
 
-    /// Отправляет POST-запрос по указанному пути с form-encoded payload-ом.
+    /// Асинхронно получает HTML тело.
     ///
-    /// Возвращает ошибки в случаях: эндпоинт невалиден (InvalidEndpoint), сетевые ошибки (NetworkError), HTTP-статус не успешен (HttpError).
+    /// Здесь нет DOM-парсинга: метод только читает тело и отдаёт
+    /// owned `String` в слой парсинга.
+    pub(crate) async fn get_html(&self, path: &str) -> Result<String> {
+        let response = self.get(path, None).await?;
+        response.text().await.map_err(Error::ResponseRead)
+    }
+
+    /// Асинхронно отправляет form-encoded POST-запрос.
     pub(crate) async fn post<T: serde::Serialize + ?Sized>(
         &self,
         path: &str,
         payload: &T,
         headers: Option<HeaderMap>,
     ) -> Result<Response> {
-        let response = self
-            .request(Method::POST, path, Some(payload), headers)
-            .await?;
-        Ok(response)
+        self.request(Method::POST, path, Some(payload), headers)
+            .await
     }
 }
