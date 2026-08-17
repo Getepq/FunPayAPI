@@ -12,14 +12,14 @@ struct RawAppData {
     user_id: u32,
 
     #[serde(rename = "csrf-token")]
-    csrf_token: Option<String>,
+    csrf_token: String,
 }
 
 /// Данные, которые нужны самому клиенту для работы с текущей сессией.
 ///
 /// Токен здесь лежит приватно и дальше network-кода не уезжает.
 pub(crate) struct SessionContext {
-    csrf_token: Option<String>,
+    csrf_token: String,
     user_id: u32,
 }
 
@@ -49,8 +49,8 @@ impl SessionContext {
     }
 
     /// Даём токен только внутреннему network-коду.
-    pub(crate) fn csrf_token(&self) -> Option<&str> {
-        self.csrf_token.as_deref()
+    pub(crate) fn csrf_token(&self) -> &str {
+        &self.csrf_token
     }
 
     /// ID текущего пользователя без всяких секретов рядом.

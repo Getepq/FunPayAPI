@@ -11,7 +11,7 @@ use tokio::task::spawn_blocking;
 /// не торчат - наружу отдаём только модели и ошибки.
 pub struct Client {
     inner: HttpClient,
-    session: Option<SessionContext>,
+    session: SessionContext,
 }
 
 impl Client {
@@ -19,11 +19,11 @@ impl Client {
     ///
     /// Ключ не возвращается, не логируется и не торчит в публичных полях.
     /// Прокси можно не указывать - тогда запросы идут напрямую.
-    pub fn new(golden_key: &str, proxy: Option<&str>) -> Result<Self> {
-        Ok(Self {
-            inner: HttpClient::new(golden_key, proxy)?,
-            session: None,
-        })
+    pub async fn new(golden_key: &str, proxy: Option<&str>) -> Result<Self> {
+        let inner = HttpClient::new(golden_key, proxy)?;
+        let session = Self::initialize_session(&inner).await?;
+
+        Ok( Self { inner, session } ) 
     }
 
     /// Забирает HTML. Тут только сеть и чтение body, без парсинга.
@@ -53,25 +53,17 @@ impl Client {
     ///
     /// `csrf_token` остаётся внутри `SessionContext`. Наружу уходит только
     /// ID пользователя, сам секрет по проекту не "гуляет".
-    async fn initialize_session(&mut self) -> Result<u32> {
-        if let Some(session) = self.session.as_ref() {
-            return Ok(session.user_id());
-        }
+    async fn initialize_session(inner: &HttpClient) -> Result<SessionContext> {
+        let html = inner.get_html("/").await?;
 
-        let html = self.fetch_html("/").await?;
-
-        let session = spawn_blocking(move || {
+        let parsed = spawn_blocking(move || {
             let document = Html::parse_document(&html);
             SessionContext::from_document(&document)
         })
         .await
-        .map_err(|error| Error::BlockingTask(error.to_string()))?
-        .map_err(Error::from)?;
+        .map_err(|error| Error::BlockingTask(error.to_string()))?;
 
-        let user_id = session.user_id();
-        self.session = Some(session);
-
-        Ok(user_id)
+        parsed.map_err(Error::from)
     }
 
     /// Загружает профиль по ID и прогоняет его через парсинг.
@@ -92,8 +84,7 @@ impl Client {
     ///
     /// Сейчас возвращается только `User`. Балансы сюда пока не присоединяем,
     /// потому что парсинг баланса ещё не готов.
-    pub async fn get_current_user(&mut self) -> Result<User> {
-        let user_id = self.initialize_session().await?;
-        self.get_user(user_id).await
+    pub async fn get_current_user(&self) -> Result<User> {
+        self.get_user(self.session.user_id()).await
     }
 }
