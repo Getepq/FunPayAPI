@@ -7,4 +7,9 @@ pub enum Error {
     #[error(transparent)]
     Network(#[from] crate::network::Error),
 
+    #[error(transparent)]
+    Parser(#[from] crate::parser::Error),
+
+    #[error("blocking-задача парсинга завершилась с ошибкой: {0}")]
+    BlockingTask(String),
 }
