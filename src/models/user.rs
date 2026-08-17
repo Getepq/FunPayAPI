@@ -9,7 +9,7 @@ pub struct User {
     /// Отображаемый username.
     pub username: String,
     /// Абсолютный URL аватарки или `None`, если inline style отсутствует.
-    pub avatar_url: Option<String>,
+    pub avatar_url: String,
     /// Текущий статус профиля.
     pub status: Status,
     /// Количество отзывов, если FunPay отдал rating block.
