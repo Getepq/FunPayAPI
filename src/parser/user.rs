@@ -15,7 +15,7 @@ pub(crate) fn get_user(document: &Html, user_id: u32) -> Result<User> {
     Ok(User {
         id: user_id,
         username: parse_username(document)?,
-        avatar_url: parse_avatar_url(document),
+        avatar_url: parse_avatar_url(document)?,
         status: parse_status(document)?,
         reviews_count: parse_reviews_count(document),
         registered_at: parse_registration_date(document)?,
@@ -45,16 +45,23 @@ fn parse_username(document: &Html) -> Result<String> {
 /// Аватарка опциональна: FunPay может отдать стандартный `/img/...` path,
 /// абсолютный CDN URL или вообще не отдать style. В последнем случае
 /// возвращаем `None`, а не прячем проблему за пустой строкой.
-fn parse_avatar_url(document: &Html) -> Option<String> {
-    let style = document
+fn parse_avatar_url(document: &Html) -> Result<String> {
+    let avatar = document
         .select(&AVATAR_URL_SEL)
-        .next()?
-        .value()
-        .attr("style")?;
+        .next()
+        .ok_or(Error::SelectorNotFound(".avatar > .avatar-photo"))?;
 
-    let raw_url = extract_background_url(style)?;
-    Some(normalize_avatar_url(&raw_url))
+    let style = avatar
+        .value()
+        .attr("style")
+        .ok_or(Error::MissingAttribute("style у .avatar > .avatar-photo"))?;
+
+    let raw_url = extract_background_url(style)
+        .ok_or(Error::EmptyField("avatar URL"))?;
+
+    Ok(normalize_avatar_url(&raw_url))
 }
+
 
 /// Вытаскивает URL из inline CSS вида `background-image: url(...)`.
 fn extract_background_url(style: &str) -> Option<String> {
