@@ -1,26 +1,37 @@
 use serde::{Deserialize, Serialize};
 
-// todo! Описать структуру превью чата.
+/// Краткие сведения о чате `FunPay`.
+///
+/// Поля будут добавлены при реализации разбора списка чатов.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatPreview {}
 
-// todo! Описать структуру полного чата.
+/// Полные сведения о чате `FunPay`.
+///
+/// Поля будут добавлены при реализации разбора страницы чата.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chat {}
 
-// todo! Описать структуру cообщения.
+/// Сообщение в чате `FunPay`.
+///
+/// Поля будут добавлены при реализации разбора сообщений.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {}
 
+/// Отправитель сообщения.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MsgFrom {
+    /// Сообщение отправлено пользователем.
     User,
+    /// Сообщение сформировано системой `FunPay`.
     System,
 }
 
-// todo! Описать все типы сообщений от пользователя.
+/// Вид сообщения в чате.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MsgTypes {
+    /// Текстовое сообщение.
     Text,
+    /// Сообщение с изображением.
     Image,
 }
