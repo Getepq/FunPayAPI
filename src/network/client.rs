@@ -1,8 +1,8 @@
-//! Async HTTP-транспорт для `FunPay`.
+//! Асинхронный HTTP-клиент для `FunPay`.
 //!
-//! Этот модуль отвечает только за I/O: куки, прокси, таймауты, HTTP-статусы
-//! и чтение response body. HTML-парсинг живёт выше и запускается через
-//! `tokio::task::spawn_blocking`.
+//! Модуль отвечает за cookie, прокси-серверы, ограничения времени ожидания,
+//! обработку HTTP-статусов и чтение тела ответа. Разбор HTML выполняется
+//! вышестоящими модулями через `tokio::task::spawn_blocking`.
 
 use std::{
     sync::{Arc, LazyLock},
@@ -17,19 +17,22 @@ use wreq_util::{Emulation, EmulationOS, EmulationOption};
 static BASE_URL: LazyLock<Url> =
     LazyLock::new(|| Url::parse("https://funpay.com/").expect("BASE_URL всегда имеет значение."));
 
-/// Внутренний HTTP-клиент с "банкой" куков и транспорт-настройками.
+/// Внутренний HTTP-клиент с хранилищем cookie и настройками транспорта.
 pub struct HttpClient {
     inner: Client,
 }
 
 impl HttpClient {
-    /// Создаёт транспорт-клиент с "банкой" куков и опциональным прокси.
+    /// Создаёт HTTP-клиент с cookie `golden_key` и необязательным прокси-сервером.
     ///
-    /// `golden_key` кладётся только во внутреннию "банку" кук. В публичные
-    /// поля, ошибки и debug-output секрет не прокидывается.
+    /// Ключ сохраняется только во внутреннем хранилище cookie и не передаётся
+    /// через публичные модели, ошибки или журнал событий. Поддерживаются
+    /// HTTP-, HTTPS- и SOCKS-прокси-серверы.
     ///
-    /// Поддерживаются HTTP/HTTPS- и SOCKS-прокси. Ошибки конфигурации
-    /// возвращаются typed-ами, без паники на пользовательском вводе.
+    /// # Errors
+    ///
+    /// Возвращает ошибку, если `golden_key` пуст, адрес прокси-сервера
+    /// некорректен или не удалось создать HTTP-клиент.
     pub fn new(golden_key: &str, proxy: Option<&str>) -> Result<Self> {
         if golden_key.is_empty() {
             return Err(Error::Config(ConfigError::MissingGoldenKey));
@@ -61,11 +64,11 @@ impl HttpClient {
         Ok(Self { inner })
     }
 
-    /// Собирает эндпоинт, отправляет запрос и мапит транспортные-ошибки.
+    /// Формирует и отправляет запрос к относительному пути `FunPay`.
     ///
-    /// Внутренний request-builder поддерживает GET/POST и опциональные загаловки.
-    /// Неуспешные HTTP-статусы превращаются в типизированные `HttpError`, чтобы
-    /// вызывающий код мог делать нормальный match, а не парсить строки.
+    /// Метод поддерживает запросы `GET` и `POST`, данные формы и дополнительные
+    /// заголовки. Неуспешные HTTP-статусы преобразуются в [`HttpError`], чтобы
+    /// вызывающий код сопоставлял варианты ошибок, а не разбирал текст сообщений.
     async fn request<T: serde::Serialize + ?Sized>(
         &self,
         method: Method,
@@ -124,13 +127,16 @@ impl HttpClient {
         Ok(response)
     }
 
-    /// Асинхронно выполняет GET-запрос по относительному `FunPay` пути.
+    /// Выполняет запрос `GET` по относительному пути `FunPay`.
     pub(crate) async fn get(&self, path: &str, headers: Option<HeaderMap>) -> Result<Response> {
         self.request(Method::GET, path, None::<&()>, headers).await
     }
 
-    
-    /// Асинхронно отправляет form-encoded POST-запрос.
+    /// Отправляет запрос `POST` с данными формы по относительному пути `FunPay`.
+    #[expect(
+        dead_code,
+        reason = "Метод будет использован при создании и изменении сущностей `FunPay`."
+    )]
     pub(crate) async fn post<T: serde::Serialize + ?Sized>(
         &self,
         path: &str,
