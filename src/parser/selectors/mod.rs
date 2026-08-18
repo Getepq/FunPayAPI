@@ -18,4 +18,5 @@ mod offer;
 mod order;
 mod user;
 
+pub(crate) use finance::*;
 pub(crate) use user::*;
