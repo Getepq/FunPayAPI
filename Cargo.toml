@@ -8,6 +8,16 @@ repository = "https://github.com/Getepq/FunPayAPI"
 readme = "README.md"
 license = "MIT"
 
+[lints.rust]
+dead_code = "deny"
+unused_imports = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+
+
 [dependencies]
 scraper = "0.27.0"
 serde = { version = "1.0.229", features = ["derive"] }
