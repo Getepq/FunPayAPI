@@ -6,11 +6,16 @@ use crate::parser::selectors::{
 use crate::parser::{Error, Result};
 use scraper::Html;
 
-/// Синхронно собирает `User` из уже загруженного HTML-документа.
+/// Собирает [`User`] из уже разобранного HTML-документа.
 ///
-/// Функция не делает запрсов и не должна запускаться прямо в async-таске.
-/// Вызывающий слой кладёт её в `tokio::task::spawn_blocking`, а сюда передаёт
-/// только `Html` и безопасный числовой `user_id`.
+/// Метод не выполняет сетевых запросов. Вызывающий код запускает разбор HTML
+/// через `tokio::task::spawn_blocking` и передаёт безопасный числовой
+/// идентификатор пользователя.
+///
+/// # Errors
+///
+/// Возвращает ошибку, если HTML не содержит обязательного поля профиля или
+/// значение обязательного поля пусто.
 pub(crate) fn get_user(document: &Html, user_id: u32) -> Result<User> {
     Ok(User {
         id: user_id,
@@ -22,7 +27,10 @@ pub(crate) fn get_user(document: &Html, user_id: u32) -> Result<User> {
     })
 }
 
-/// Парсит username. Поле обязательное: без него профиль считаем битым.
+/// Извлекает отображаемое имя пользователя.
+///
+/// Имя является обязательным полем профиля. Пустая строка считается ошибкой
+/// разбора.
 fn parse_username(document: &Html) -> Result<String> {
     let username = document
         .select(&USERNAME_SEL)
@@ -40,11 +48,10 @@ fn parse_username(document: &Html) -> Result<String> {
     Ok(username)
 }
 
-/// Парсит avatar URL.
+/// Извлекает и приводит к абсолютному виду адрес изображения профиля.
 ///
-/// Аватарка опциональна: `FunPay` может отдать стандартный `/img/...` path,
-/// абсолютный CDN URL или вообще не отдать style. В последнем случае
-/// возвращаем `None`, а не прячем проблему за пустой строкой.
+/// Метод принимает абсолютный, относительный и протокольно-независимый адрес.
+/// Отсутствие атрибута `style` или пустой адрес считаются ошибкой разбора.
 fn parse_avatar_url(document: &Html) -> Result<String> {
     let avatar = document
         .select(&AVATAR_URL_SEL)
@@ -61,7 +68,7 @@ fn parse_avatar_url(document: &Html) -> Result<String> {
     Ok(normalize_avatar_url(&raw_url))
 }
 
-/// Вытаскивает URL из inline CSS вида `background-image: url(...)`.
+/// Извлекает адрес из значения CSS-свойства `background-image`.
 fn extract_background_url(style: &str) -> Option<String> {
     let start = style.find("url(")? + "url(".len();
     let end = style[start..].find(')')? + start;
@@ -71,7 +78,7 @@ fn extract_background_url(style: &str) -> Option<String> {
     (!url.is_empty()).then(|| url.to_owned())
 }
 
-/// Нормализует relative и protocol-relative URL в абсолютный URL.
+/// Приводит относительный или протокольно-независимый адрес к абсолютному виду.
 fn normalize_avatar_url(url: &str) -> String {
     let url = url.trim();
 
@@ -84,9 +91,10 @@ fn normalize_avatar_url(url: &str) -> String {
     }
 }
 
-/// Достаёт число отзывов из текста `Всего <N> отзыва`.
+/// Извлекает количество отзывов из текста вида `Всего <N> отзыва`.
 ///
-/// Отсутствие блока отзывов - валидный кейс, поэтому возвращаем `None`.
+/// Отсутствие блока отзывов является допустимым случаем и представляется
+/// значением `None`.
 fn parse_reviews_count(document: &Html) -> Option<u32> {
     document
         .select(&REVIEWS_COUNT_SEL)
@@ -96,7 +104,9 @@ fn parse_reviews_count(document: &Html) -> Option<u32> {
         .find_map(|part| part.parse::<u32>().ok())
 }
 
-/// Парсит только абсолютную дату регистрации, без подсказки `N лет назад`.
+/// Извлекает дату регистрации без относительного описания давности.
+///
+/// Пустая дата считается ошибкой разбора.
 fn parse_registration_date(document: &Html) -> Result<String> {
     let date = document
         .select(&REGISTRATION_DATE_SEL)
@@ -117,10 +127,10 @@ fn parse_registration_date(document: &Html) -> Result<String> {
     Ok(date)
 }
 
-/// Определяет статус в порядке приоритета: blocked, online, offline.
+/// Определяет состояние профиля в порядке: заблокирован, в сети, не в сети.
 ///
-/// Заблокированный профиль может не иметь обычного `media-user-status`,
-/// поэтому danger-бейдж проверяем первым.
+/// Блокировка проверяется первой, поскольку заблокированный профиль может не
+/// содержать обычный элемент состояния пользователя.
 fn parse_status(document: &Html) -> Result<Status> {
     if document.select(&USER_BADGE_SEL).any(|element| {
         element
