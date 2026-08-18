@@ -165,3 +165,161 @@ fn parse_status(document: &Html) -> Result<Status> {
         ".profile > h1.online/offline > span.media-user-status",
     ))
 }
+
+// Тесты
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_online_profile_with_reviews_from_real_markup() {
+        let document = Html::parse_document(
+            r#"
+            <div class="profile">
+                <h1 class="online">
+                    <span class="mr4">Wenix1</span>
+                    <span class="media-user-status">Онлайн</span>
+                </h1>
+            </div>
+            <div class="avatar">
+                <div class="avatar-photo" style="background-image: url(https://sfunpay.com/s/avatar/hj/td/hjtdeogfcq1brclbldai.jpg);"></div>
+            </div>
+            <div class="profile-header-col-rating">
+                <div class="rating-full-count"><a>Всего 3 отзыва</a></div>
+            </div>
+            <div class="profile-header-cols">
+                <div class="param-item">
+                    <h5 class="text-bold">На сайте с</h5>
+                    <div class="text-nowrap">24 марта 2024, 18:55 <span>2 года назад</span></div>
+                </div>
+            </div>
+            "#,
+        );
+
+        let user = get_user(&document, 10_486_765).expect("Профиль должен быть разобран");
+
+        assert_eq!(user.id, 10_486_765);
+        assert_eq!(user.username, "Wenix1");
+        assert_eq!(
+            user.avatar_url,
+            "https://sfunpay.com/s/avatar/hj/td/hjtdeogfcq1brclbldai.jpg"
+        );
+        assert_eq!(user.status, Status::Online);
+        assert_eq!(user.reviews_count, Some(3));
+        assert_eq!(user.registered_at, "24 марта 2024, 18:55");
+    }
+
+    #[test]
+    fn parses_offline_profile_from_real_markup() {
+        let document = Html::parse_document(
+            r#"
+            <div class="profile">
+                <h1 class="offline">
+                    <span class="mr4">casaaaaaaaaa</span>
+                    <span class="media-user-status">Был сегодня в 11:02 <span>(35 минут назад)</span></span>
+                </h1>
+            </div>
+            <div class="avatar">
+                <div class="avatar-photo" style="background-image: url(https://sfunpay.com/s/avatar/f5/ro/f5ro8nys68vgf2bvynbb.jpg);"></div>
+            </div>
+            <div class="profile-header-col-rating">
+                <div class="rating-full-count"><a>Всего 183 отзыва</a></div>
+            </div>
+            <div class="profile-header-cols">
+                <div class="param-item">
+                    <h5 class="text-bold">На сайте с</h5>
+                    <div class="text-nowrap">14 июня 2024, 16:32 <span>2 года назад</span></div>
+                </div>
+            </div>
+            "#,
+        );
+
+        let user = get_user(&document, 123).expect("Профиль должен быть разобран");
+
+        assert_eq!(user.username, "casaaaaaaaaa");
+        assert_eq!(user.reviews_count, Some(183));
+        assert_eq!(user.registered_at, "14 июня 2024, 16:32");
+        assert_eq!(
+            user.status,
+            Status::Offline {
+                last_seen: "Был сегодня в 11:02 (35 минут назад)".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn prioritizes_blocked_profile_from_real_markup() {
+        let document = Html::parse_document(
+            r#"
+            <div class="profile">
+                <h1>
+                    <span class="mr4">ximivo556</span>
+                    <small class="user-badges"><span class="label label-danger">заблокирован</span></small>
+                </h1>
+            </div>
+            <div class="avatar">
+                <div class="avatar-photo" style="background-image: url(https://sfunpay.com/s/avatar/dp/u0/dpu0z59apiaa4be9y9p5.jpg);"></div>
+            </div>
+            <div class="profile-header-cols">
+                <div class="param-item">
+                    <h5 class="text-bold">На сайте с</h5>
+                    <div class="text-nowrap">28 августа 2021, 19:19 <span>5 лет назад</span></div>
+                </div>
+            </div>
+            "#,
+        );
+
+        let user = get_user(&document, 456).expect("Профиль должен быть разобран");
+
+        assert_eq!(user.username, "ximivo556");
+        assert_eq!(user.reviews_count, None);
+        assert_eq!(user.registered_at, "28 августа 2021, 19:19");
+        assert_eq!(user.status, Status::Blocked);
+    }
+
+    #[test]
+    fn parses_relative_avatar_and_ignores_non_danger_badge() {
+        let document = Html::parse_document(
+            r#"
+            <div class="profile">
+                <h1 class="online">
+                    <span class="mr4">FunPay</span>
+                    <small class="user-badges"><span class="label label-success">поддержка</span></small>
+                    <span class="media-user-status">Онлайн</span>
+                </h1>
+            </div>
+            <div class="avatar">
+                <div class="avatar-photo" style="background-image: url(/img/layout/avatar.png);"></div>
+            </div>
+            <div class="profile-header-cols">
+                <div class="param-item">
+                    <h5 class="text-bold">На сайте с</h5>
+                    <div class="text-nowrap">24 августа 2015, 23:39 <span>11 лет назад</span></div>
+                </div>
+            </div>
+            "#,
+        );
+
+        let user = get_user(&document, 1).expect("Профиль должен быть разобран");
+
+        assert_eq!(user.avatar_url, "https://funpay.com/img/layout/avatar.png");
+        assert_eq!(user.status, Status::Online);
+        assert_eq!(user.reviews_count, None);
+    }
+
+    #[test]
+    fn returns_error_when_username_is_missing() {
+        let document = Html::parse_fragment(
+            r#"
+            <div class="profile">
+                <h1 class="online"><span class="media-user-status">Онлайн</span></h1>
+            </div>
+            "#,
+        );
+
+        assert!(matches!(
+            get_user(&document, 1),
+            Err(Error::SelectorNotFound(_))
+        ));
+    }
+}
