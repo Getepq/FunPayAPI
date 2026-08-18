@@ -1,7 +1,7 @@
 use crate::models::Balances;
 use serde::{Deserialize, Serialize};
 
-/// Профиль пользователя FunPay.
+/// Профиль пользователя `FunPay`.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     /// Числовой ID профиля.
@@ -12,7 +12,7 @@ pub struct User {
     pub avatar_url: String,
     /// Текущий статус профиля.
     pub status: Status,
-    /// Количество отзывов, если FunPay отдал rating block.
+    /// Количество отзывов, если `FunPay` отдал rating block.
     pub reviews_count: Option<u32>,
     /// Абсолютная дата регистрации без подсказки.
     pub registered_at: String,

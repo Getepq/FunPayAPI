@@ -42,7 +42,7 @@ fn parse_username(document: &Html) -> Result<String> {
 
 /// Парсит avatar URL.
 ///
-/// Аватарка опциональна: FunPay может отдать стандартный `/img/...` path,
+/// Аватарка опциональна: `FunPay` может отдать стандартный `/img/...` path,
 /// абсолютный CDN URL или вообще не отдать style. В последнем случае
 /// возвращаем `None`, а не прячем проблему за пустой строкой.
 fn parse_avatar_url(document: &Html) -> Result<String> {
@@ -56,12 +56,10 @@ fn parse_avatar_url(document: &Html) -> Result<String> {
         .attr("style")
         .ok_or(Error::MissingAttribute("style у .avatar > .avatar-photo"))?;
 
-    let raw_url = extract_background_url(style)
-        .ok_or(Error::EmptyField("avatar URL"))?;
+    let raw_url = extract_background_url(style).ok_or(Error::EmptyField("avatar URL"))?;
 
     Ok(normalize_avatar_url(&raw_url))
 }
-
 
 /// Вытаскивает URL из inline CSS вида `background-image: url(...)`.
 fn extract_background_url(style: &str) -> Option<String> {
