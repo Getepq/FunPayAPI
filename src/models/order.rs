@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-// todo! Описать структуру превью ордера.
+/// Краткие сведения о заказе на `FunPay`.
+///
+/// Поля будут добавлены при реализации разбора списка заказов.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrderPreview {}
 
-// todo! Описать структуру полного ордера.
+/// Полные сведения о заказе на `FunPay`.
+///
+/// Поля будут добавлены при реализации разбора страницы заказа.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {}
