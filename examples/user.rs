@@ -2,18 +2,16 @@ use funpay_api::{Client, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Инициализируем в проект аккаунт для работы с ним.
+    // Создаём клиента для работы с учётной записью.
     let client = Client::new("", None).await?;
 
-    // Получаем данные о пользователю, кому принадлежит golden_key.s
-    let user = client.get_current_user().await?;
+    // Загружаем профиль и балансы владельца ключа.
+    let current_user = client.get_current_user().await?;
+    println!("{current_user:?}");
 
-    // Выводим в консоль. Трейт Display не реализован для всех моделей.
-    println!("{:?}", user);
-
-    // Получаем данные о другом пользователя, в нашем примере это SidoRenko.
-    let sidor_user = client.get_user(714925).await?;
-    println!("{:?}", sidor_user);
+    // Загружаем профиль другого пользователя по его идентификатору.
+    let user = client.get_user(714_925).await?;
+    println!("{user:?}");
 
     Ok(())
 }
