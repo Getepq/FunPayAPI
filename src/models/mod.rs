@@ -5,7 +5,7 @@ mod order;
 mod user;
 
 pub use chat::{Chat, ChatPreview, Message, MsgFrom, MsgTypes};
-pub use finance::Balances;
+pub use finance::{Balances, Currency};
 pub use offer::{Lot, LotTypes, Offer, OfferPreview};
 pub use order::{Order, OrderPreview};
 pub use user::{CurrentUser, Status, User};
