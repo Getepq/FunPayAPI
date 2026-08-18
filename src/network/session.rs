@@ -2,10 +2,10 @@ use crate::parser::{Error as ParserError, Result as ParserResult, selectors::APP
 use scraper::Html;
 use serde::Deserialize;
 
-/// Сюда временно складываем JSON из `data-app-data`.
+/// Промежуточная модель данных из атрибута `data-app-data`.
 ///
-/// Наружу эту структуру не отдаём: внутри лежит csrf-токен, а ему нечего делать
-/// в публичных моделях.
+/// Тип используется только при разборе HTML. Токен защиты от межсайтовой
+/// подделки запросов не включается в публичные модели библиотеки.
 #[derive(Deserialize)]
 struct RawAppData {
     #[serde(rename = "userId")]
@@ -15,19 +15,24 @@ struct RawAppData {
     csrf_token: String,
 }
 
-/// Данные, которые нужны самому клиенту для работы с текущей сессией.
+/// Данные, необходимые клиенту для работы с текущей сессией.
 ///
-/// Токен здесь лежит приватно и дальше network-кода не уезжает.
+/// Токен защиты от межсайтовой подделки запросов остаётся приватным и
+/// используется только внутренними сетевыми модулями.
 pub(crate) struct SessionContext {
+    #[expect(
+        dead_code,
+        reason = "Поле будет передаваться в запросы `POST`, требующие CSRF-защиты."
+    )]
     csrf_token: String,
     user_id: u32,
 }
 
 impl SessionContext {
-    /// Достаём session-данные из уже распарсенного HTML.
+    /// Извлекает данные сессии из уже разобранного HTML-документа.
     ///
-    /// Функция sync, поэтому вызывающий код должен запускать её через
-    /// `spawn_blocking`, а не прямо внутри async flow.
+    /// Метод не выполняет сетевых запросов. Вызывающий код запускает его в
+    /// `tokio::task::spawn_blocking`, а не в асинхронной задаче напрямую.
     pub(crate) fn from_document(document: &Html) -> ParserResult<Self> {
         let element = document
             .select(&APP_DATA_SEL)
@@ -48,12 +53,16 @@ impl SessionContext {
         })
     }
 
-    /// Даём токен только внутреннему network-коду.
+    /// Возвращает токен защиты от межсайтовой подделки запросов для внутреннего кода.
+    #[expect(
+        dead_code,
+        reason = "Метод будет использован запросами `POST`, требующими CSRF-защиты."
+    )]
     pub(crate) fn csrf_token(&self) -> &str {
         &self.csrf_token
     }
 
-    /// ID текущего пользователя без всяких секретов рядом.
+    /// Возвращает числовой идентификатор пользователя текущей сессии.
     pub(crate) fn user_id(&self) -> u32 {
         self.user_id
     }
