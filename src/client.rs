@@ -1,25 +1,31 @@
 use crate::error::{Error, Result};
-use crate::models::User;
+use crate::models::{Balances, CurrentUser, User};
 use crate::network::Error::ResponseRead;
 use crate::network::{HttpClient, SessionContext};
 use crate::parser;
 use scraper::Html;
 use tokio::task::spawn_blocking;
 
-/// Главный объект, через который управляем аккаунтом в `FunPay`.
+/// Основной клиент для работы с учётной записью `FunPay`.
 ///
-/// Внутри лежат HTTP-клиент и session-контекст. Токены и куки наружу
-/// не торчат - наружу отдаём только модели и ошибки.
+/// Клиент хранит HTTP-клиент и контекст текущей сессии. Секретные данные
+/// остаются во внутренних типах и не входят в публичные модели или ошибки.
 pub struct Client {
     inner: HttpClient,
     session: SessionContext,
 }
 
 impl Client {
-    /// Создаёт клиента и кладёт `golden_key` во внутреннию "банку" с куками.
+    /// Создаёт клиент для учётной записи `FunPay`.
     ///
-    /// Ключ не возвращается, не логируется и не торчит в публичных полях.
-    /// Прокси можно не указывать - тогда запросы идут напрямую.
+    /// Переданный `golden_key` сохраняется только во внутреннем хранилище cookie.
+    /// Если `proxy` равен `None`, запросы отправляются без прокси-сервера.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает ошибку при некорректном ключе или настройках прокси-сервера,
+    /// невозможности создать HTTP-клиент, загрузить начальную страницу,
+    /// разобрать данные сессии либо выполнить задачу с блокирующей операцией.
     pub async fn new(golden_key: &str, proxy: Option<&str>) -> Result<Self> {
         let inner = HttpClient::new(golden_key, proxy)?;
         let session = Self::initialize_session(&inner).await?;
@@ -27,23 +33,24 @@ impl Client {
         Ok(Self { inner, session })
     }
 
-    /// Забирает HTML. Тут только сеть и чтение body, без парсинга.
+    /// Загружает исходный HTML по относительному пути `FunPay`.
     ///
-    /// DOM собираем позже, уже в blocking-задаче, чтобы не стопить рантайм.
+    /// Метод отвечает только за отправку запроса и чтение тела ответа. Разбор
+    /// HTML выполняется вызывающим методом в отдельной задаче с блокирующей
+    /// операцией.
     async fn fetch_html(&self, path: &str) -> Result<String> {
         let resposnse = self.inner.get(path, None).await?;
         let html = resposnse
-        .text()
-        .await
-        .map_err(|e| Error::Network(ResponseRead(e)))?;
+            .text()
+            .await
+            .map_err(|e| Error::Network(ResponseRead(e)))?;
         Ok(html)
     }
 
-    /// Отдаёт HTML в `spawn_blocking` и возвращает готового `User`.
+    /// Разбирает HTML страницы профиля и возвращает модель пользователя.
     ///
-    /// `scraper` синхронный и CPU-bound. Если запускать его прямо внутри async,
-    /// можно случайно подвесить рантайм. Поэтому здесь весь DOM flow живёт
-    /// в отдельном blocking worker-е.
+    /// Разбор HTML не выполняет сетевых запросов. Он запускается через
+    /// `tokio::task::spawn_blocking`, чтобы не блокировать исполнитель Tokio.
     async fn parse_user_html(&self, html: String, user_id: u32) -> Result<User> {
         let parsed = spawn_blocking(move || {
             let document = Html::parse_document(&html);
@@ -55,16 +62,31 @@ impl Client {
         parsed.map_err(Error::from)
     }
 
-    /// Достаёт `user_id` из главной страницы и кеширует session-контекст.
+    /// Разбирает HTML страницы баланса и возвращает значения по валютам.
     ///
-    /// `csrf_token` остаётся внутри `SessionContext`. Наружу уходит только
-    /// ID пользователя, сам секрет по проекту не "гуляет".
+    /// Разбор HTML выполняется через `tokio::task::spawn_blocking`, чтобы не
+    /// блокировать исполнитель Tokio.
+    async fn parse_balances_html(html: String) -> Result<Balances> {
+        let parsed = spawn_blocking(move || {
+            let document = Html::parse_document(&html);
+            parser::get_balances(&document)
+        })
+        .await
+        .map_err(|error| Error::BlockingTask(error.to_string()))?;
+
+        parsed.map_err(Error::from)
+    }
+
+    /// Извлекает данные текущей сессии из начальной страницы `FunPay`.
+    ///
+    /// Токен защиты от межсайтовой подделки запросов сохраняется только в
+    /// `SessionContext` и не передаётся через публичный интерфейс.
     async fn initialize_session(inner: &HttpClient) -> Result<SessionContext> {
         let response = inner.get("/", None).await?;
         let html = response
-        .text()
-        .await
-        .map_err(|e| Error::Network(ResponseRead(e)))?;
+            .text()
+            .await
+            .map_err(|e| Error::Network(ResponseRead(e)))?;
 
         let parsed = spawn_blocking(move || {
             let document = Html::parse_document(&html);
@@ -76,10 +98,13 @@ impl Client {
         parsed.map_err(Error::from)
     }
 
-    /// Загружает профиль по ID и прогоняет его через парсинг.
+    /// Загружает и разбирает профиль пользователя по его числовому идентификатору.
     ///
-    /// Сеть async, HTML parsing - в blocking worker. ID числовой, так что
-    /// в URL нельзя случайно подсунуть левый путь.
+    /// # Errors
+    ///
+    /// Возвращает ошибку при неуспешном HTTP-запросе, невозможности прочитать
+    /// ответ, разобрать HTML профиля или выполнить задачу с блокирующей
+    /// операцией.
     pub async fn get_user(&self, user_id: u32) -> Result<User> {
         let path = format!("/users/{user_id}/");
         let html = self.fetch_html(&path).await?;
@@ -87,14 +112,22 @@ impl Client {
         self.parse_user_html(html, user_id).await
     }
 
-    /// Загружает профиль текущего пользователя.
+    /// Загружает профиль и балансы пользователя, которому принадлежит `golden_key`.
     ///
-    /// Первый вызов открывает главную, достаёт `user_id` из `data-app-data`
-    /// и сохраняет session-контекст. Дальше контекст уже не пересобираем.
+    /// Профиль загружается со страницы пользователя, а балансы — со страницы
+    /// `/account/balance`.
     ///
-    /// Сейчас возвращается только `User`. Балансы сюда пока не присоединяем,
-    /// потому что парсинг баланса ещё не готов.
-    pub async fn get_current_user(&self) -> Result<User> {
-        self.get_user(self.session.user_id()).await
+    /// # Errors
+    ///
+    /// Возвращает ошибку при неуспешном HTTP-запросе, невозможности прочитать
+    /// ответ, разобрать HTML профиля или баланса либо выполнить задачу с
+    /// блокирующей операцией.
+    pub async fn get_current_user(&self) -> Result<CurrentUser> {
+        let user = self.get_user(self.session.user_id()).await?;
+
+        let balance_html = self.fetch_html("/account/balance").await?;
+        let balance = Self::parse_balances_html(balance_html).await?;
+
+        Ok(CurrentUser { user, balance })
     }
 }
