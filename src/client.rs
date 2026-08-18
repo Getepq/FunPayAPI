@@ -1,11 +1,12 @@
 use crate::error::{Error, Result};
 use crate::models::User;
+use crate::network::Error::ResponseRead;
 use crate::network::{HttpClient, SessionContext};
 use crate::parser;
 use scraper::Html;
 use tokio::task::spawn_blocking;
 
-/// Главный объект, через который управляем аккаунтом в FunPay.
+/// Главный объект, через который управляем аккаунтом в `FunPay`.
 ///
 /// Внутри лежат HTTP-клиент и session-контекст. Токены и куки наружу
 /// не торчат - наружу отдаём только модели и ошибки.
@@ -23,14 +24,19 @@ impl Client {
         let inner = HttpClient::new(golden_key, proxy)?;
         let session = Self::initialize_session(&inner).await?;
 
-        Ok( Self { inner, session } ) 
+        Ok(Self { inner, session })
     }
 
     /// Забирает HTML. Тут только сеть и чтение body, без парсинга.
     ///
     /// DOM собираем позже, уже в blocking-задаче, чтобы не стопить рантайм.
     async fn fetch_html(&self, path: &str) -> Result<String> {
-        self.inner.get_html(path).await.map_err(Error::from)
+        let resposnse = self.inner.get(path, None).await?;
+        let html = resposnse
+        .text()
+        .await
+        .map_err(|e| Error::Network(ResponseRead(e)))?;
+        Ok(html)
     }
 
     /// Отдаёт HTML в `spawn_blocking` и возвращает готового `User`.
@@ -54,7 +60,11 @@ impl Client {
     /// `csrf_token` остаётся внутри `SessionContext`. Наружу уходит только
     /// ID пользователя, сам секрет по проекту не "гуляет".
     async fn initialize_session(inner: &HttpClient) -> Result<SessionContext> {
-        let html = inner.get_html("/").await?;
+        let response = inner.get("/", None).await?;
+        let html = response
+        .text()
+        .await
+        .map_err(|e| Error::Network(ResponseRead(e)))?;
 
         let parsed = spawn_blocking(move || {
             let document = Html::parse_document(&html);
