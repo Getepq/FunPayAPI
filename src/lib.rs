@@ -8,13 +8,9 @@
 
 mod client;
 mod error;
-mod models;
 mod network;
 mod parser;
 
 pub use client::Client;
+pub mod models;
 pub use error::{Error, Result};
-pub use models::{
-    Balances, Chat, ChatPreview, Currency, CurrentUser, Lot, LotTypes, Message, MsgFrom, MsgTypes,
-    Offer, OfferPreview, Order, OrderPreview, Status, User,
-};
