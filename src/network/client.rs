@@ -1,4 +1,4 @@
-//! Async HTTP-транспорт для FunPay.
+//! Async HTTP-транспорт для `FunPay`.
 //!
 //! Этот модуль отвечает только за I/O: куки, прокси, таймауты, HTTP-статусы
 //! и чтение response body. HTML-парсинг живёт выше и запускается через
@@ -36,7 +36,7 @@ impl HttpClient {
         }
 
         let jar = Jar::default();
-        let cookies = format!("golden_key={}; Domain=funpay.com", golden_key);
+        let cookies = format!("golden_key={golden_key}; Domain=funpay.com");
         jar.add_cookie_str(&cookies, &BASE_URL);
 
         let emulation = EmulationOption::builder()
@@ -124,20 +124,12 @@ impl HttpClient {
         Ok(response)
     }
 
-    /// Асинхронно выполняет GET-запрос по относительному FunPay пути.
+    /// Асинхронно выполняет GET-запрос по относительному `FunPay` пути.
     pub(crate) async fn get(&self, path: &str, headers: Option<HeaderMap>) -> Result<Response> {
         self.request(Method::GET, path, None::<&()>, headers).await
     }
 
-    /// Асинхронно получает HTML тело.
-    ///
-    /// Здесь нет DOM-парсинга: метод только читает тело и отдаёт
-    /// owned `String` в слой парсинга.
-    pub(crate) async fn get_html(&self, path: &str) -> Result<String> {
-        let response = self.get(path, None).await?;
-        response.text().await.map_err(Error::ResponseRead)
-    }
-
+    
     /// Асинхронно отправляет form-encoded POST-запрос.
     pub(crate) async fn post<T: serde::Serialize + ?Sized>(
         &self,
