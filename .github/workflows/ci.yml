@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Проверка Rust-кода
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+
+      - name: Установить Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Восстановить кэш зависимостей
+        uses: Swatinem/rust-cache@v2
+
+      - name: Проверить форматирование
+        run: cargo fmt --all -- --check
+
+      - name: Запустить Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Запустить тесты
+        run: cargo test --all-targets --all-features
+
+      - name: Проверить документацию
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
