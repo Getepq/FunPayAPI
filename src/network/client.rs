@@ -50,9 +50,9 @@ impl HttpClient {
         let mut builder = Client::builder()
             .emulation(emulation)
             .cookie_provider(Arc::new(jar))
-            .connect_timeout(Duration::from_secs(5))
-            .read_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(20));
+            .connect_timeout(Duration::from_secs(10))
+            .read_timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(30));
 
         if let Some(proxy) = proxy {
             let proxy = Proxy::all(proxy).map_err(ConfigError::InvalidProxy)?;
