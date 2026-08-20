@@ -8,4 +8,5 @@ mod user;
 
 pub(crate) use error::{Error, Result};
 pub(crate) use finance::get_balances;
+pub(crate) use offer::{get_offer, get_offer_previews};
 pub(crate) use user::get_user;
